@@ -44,7 +44,16 @@
     textNode.parentNode.replaceChild(frag, textNode);
   }
 
-  const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEXTAREA", "INPUT", "SVG", "CANVAS", "IFRAME"]);
+  // Apply font to input/textarea typed content via CSS
+  const inputStyle = document.createElement("style");
+  inputStyle.textContent = `
+    input, textarea {
+      font-family: "Tetrasaim", sans-serif !important;
+    }
+  `;
+  (document.head || document.documentElement).appendChild(inputStyle);
+
+  const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "CANVAS", "IFRAME"]);
 
   function processNode(root) {
     const walker = document.createTreeWalker(
