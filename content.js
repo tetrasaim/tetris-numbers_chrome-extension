@@ -1,7 +1,6 @@
 (function () {
   const fontUrl = chrome.runtime.getURL("tetrasaim.otf");
 
-  // Inject @font-face
   const style = document.createElement("style");
   style.textContent = `
     @font-face {
@@ -14,37 +13,6 @@
   `;
   (document.head || document.documentElement).appendChild(style);
 
-  // Regex: digits 0-9, superscript/subscript digits, fractions ½ ¼ ¾ etc.
-  const NUMBERS_RE = /[0-9\u00B2\u00B3\u00B9\u00BC-\u00BE\u2070\u2074-\u2079\u2080-\u2089\u2150-\u218B]+/g;
-
-  function wrapTextNode(textNode) {
-    const text = textNode.nodeValue;
-    if (!NUMBERS_RE.test(text)) return;
-    NUMBERS_RE.lastIndex = 0;
-
-    const frag = document.createDocumentFragment();
-    let lastIndex = 0;
-    let match;
-
-    while ((match = NUMBERS_RE.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
-      }
-      const span = document.createElement("span");
-      span.className = "tetrasaim-num";
-      span.textContent = match[0];
-      frag.appendChild(span);
-      lastIndex = NUMBERS_RE.lastIndex;
-    }
-
-    if (lastIndex < text.length) {
-      frag.appendChild(document.createTextNode(text.slice(lastIndex)));
-    }
-
-    textNode.parentNode.replaceChild(frag, textNode);
-  }
-
-  // Apply font to input/textarea typed content via CSS
   const inputStyle = document.createElement("style");
   inputStyle.textContent = `
     input, textarea {
@@ -52,6 +20,37 @@
     }
   `;
   (document.head || document.documentElement).appendChild(inputStyle);
+
+  const NUMBERS_RE = /[0-9\u00B2\u00B3\u00B9\u00BC-\u00BE\u2070\u2074-\u2079\u2080-\u2089\u2150-\u218B]+/g;
+
+  function wrapTextNode(textNode) {
+    try {
+      const text = textNode.nodeValue;
+      if (!NUMBERS_RE.test(text)) return;
+      NUMBERS_RE.lastIndex = 0;
+
+      const frag = document.createDocumentFragment();
+      let lastIndex = 0;
+      let match;
+
+      while ((match = NUMBERS_RE.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+          frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+        }
+        const span = document.createElement("span");
+        span.className = "tetrasaim-num";
+        span.textContent = match[0];
+        frag.appendChild(span);
+        lastIndex = NUMBERS_RE.lastIndex;
+      }
+
+      if (lastIndex < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+      }
+
+      if (textNode.parentNode) textNode.parentNode.replaceChild(frag, textNode);
+    } catch (e) {}
+  }
 
   const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "CANVAS", "IFRAME"]);
 
