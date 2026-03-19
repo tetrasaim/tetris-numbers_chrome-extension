@@ -15,5 +15,8 @@
       "resources": ["tetrasaim.otf"],
       "matches": ["<all_urls>"]
     }
+  ],
+  "host_permissions": [
+    "https://raw.githubusercontent.com/*"
   ]
 }
