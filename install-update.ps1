@@ -43,10 +43,23 @@ try {
     # GitHub adds a root folder inside the zip - find it
     $InnerDir = Get-ChildItem -Path $ExtractDir -Directory | Select-Object -First 1 -ExpandProperty FullName
 
-    # Replace
-    Write-Host "[3/4] Replacing extension folder..." -ForegroundColor Yellow
-    Remove-Item -Path $ExtFolder -Recurse -Force
-    Copy-Item -Path $InnerDir -Destination $ExtFolder -Recurse
+    # Check if the correct extension is already installed by looking for tetrasaim.otf
+    $KeyFile = Get-ChildItem -Path $ExtFolder -Filter "tetrasaim.otf" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    $IsFirstInstall = ($null -eq $KeyFile)
+
+    if ($IsFirstInstall) {
+        # First install: create a new subfolder inside the selected folder
+        $NewFolderName = Split-Path $InnerDir -Leaf
+        $Destination = Join-Path $ExtFolder $NewFolderName
+        Write-Host "[3/4] First install - creating folder: $Destination" -ForegroundColor Yellow
+        Copy-Item -Path $InnerDir -Destination $Destination -Recurse
+    } else {
+        # Update: replace contents of the folder that contains tetrasaim.otf
+        $Destination = Split-Path $KeyFile.FullName -Parent
+        Write-Host "[3/4] Update - replacing folder: $Destination" -ForegroundColor Yellow
+        Remove-Item -Path "$Destination\*" -Recurse -Force
+        Copy-Item -Path "$InnerDir\*" -Destination $Destination -Recurse -Force
+    }
 
     # Cleanup
     Write-Host "[4/4] Cleaning up..." -ForegroundColor Yellow
@@ -61,7 +74,7 @@ try {
     Write-Host "  1. Open chrome://extensions"
     Write-Host "  2. Enable Developer Mode"
     Write-Host "  3. Click 'Load unpacked'"
-    Write-Host "  4. Select: $ExtFolder"
+    Write-Host "  4. Select: $Destination"
     Write-Host ""
 
 } catch {
