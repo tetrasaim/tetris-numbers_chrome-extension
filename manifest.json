@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Tetrasaim Numbers Font",
+  "version": "1.0",
+  "description": "Replaces all numbers and fraction characters with the Tetrasaim font",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["tetrasaim.otf"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
