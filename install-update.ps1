@@ -1,5 +1,4 @@
 # Chrome Extension Updater - Tetris Numbers
-# Downloads the latest version from GitHub and replaces your local extension folder
 
 $ZipUrl = "https://github.com/tetrasaim/tetris-numbers_chrome-extension/archive/refs/heads/main.zip"
 
@@ -9,59 +8,48 @@ Write-Host "  Chrome Extension Updater - Tetris Numbers" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Open folder picker dialog
-Write-Host "Opening folder picker..." -ForegroundColor Yellow
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = "Select your Chrome extension folder"
-$dialog.ShowNewFolderButton = $false
+Write-Host "Paste the path to your extension folder and press Enter:" -ForegroundColor Yellow
+$ExtFolder = (Read-Host "Path").Trim().Trim('"')
 
-if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
-    Write-Host "No folder selected. Exiting." -ForegroundColor Red
+if (-not (Test-Path $ExtFolder)) {
+    Write-Host "[Error] Folder not found: $ExtFolder" -ForegroundColor Red
+    Read-Host "Press Enter to exit"
     exit 1
 }
 
-$ExtFolder = $dialog.SelectedPath
-Write-Host "Selected: $ExtFolder" -ForegroundColor Green
 Write-Host ""
 
-# Temp directory
 $TmpDir = Join-Path $env:TEMP ("ext_update_" + [System.IO.Path]::GetRandomFileName())
 $ZipFile = Join-Path $TmpDir "extension.zip"
 $ExtractDir = Join-Path $TmpDir "extracted"
 New-Item -ItemType Directory -Path $ExtractDir -Force | Out-Null
 
 try {
-    # Download
     Write-Host "[1/4] Downloading ZIP from GitHub..." -ForegroundColor Yellow
     Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipFile -UseBasicParsing
 
-    # Extract
     Write-Host "[2/4] Extracting ZIP..." -ForegroundColor Yellow
     Expand-Archive -Path $ZipFile -DestinationPath $ExtractDir -Force
 
-    # GitHub adds a root folder inside the zip - find it
     $InnerDir = Get-ChildItem -Path $ExtractDir -Directory | Select-Object -First 1 -ExpandProperty FullName
 
-    # Check if the correct extension is already installed by looking for tetrasaim.otf
+    # Check if tetrasaim.otf exists (indicates existing install)
     $KeyFile = Get-ChildItem -Path $ExtFolder -Filter "tetrasaim.otf" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    $IsFirstInstall = ($null -eq $KeyFile)
 
-    if ($IsFirstInstall) {
-        # First install: create a new subfolder inside the selected folder
+    if ($null -eq $KeyFile) {
+        # First install: create subfolder inside selected path
         $NewFolderName = Split-Path $InnerDir -Leaf
         $Destination = Join-Path $ExtFolder $NewFolderName
-        Write-Host "[3/4] First install - creating folder: $Destination" -ForegroundColor Yellow
+        Write-Host "[3/4] First install - creating: $Destination" -ForegroundColor Yellow
         Copy-Item -Path $InnerDir -Destination $Destination -Recurse
     } else {
-        # Update: replace contents of the folder that contains tetrasaim.otf
+        # Update: replace folder that contains tetrasaim.otf
         $Destination = Split-Path $KeyFile.FullName -Parent
-        Write-Host "[3/4] Update - replacing folder: $Destination" -ForegroundColor Yellow
+        Write-Host "[3/4] Update - replacing: $Destination" -ForegroundColor Yellow
         Remove-Item -Path "$Destination\*" -Recurse -Force
         Copy-Item -Path "$InnerDir\*" -Destination $Destination -Recurse -Force
     }
 
-    # Cleanup
     Write-Host "[4/4] Cleaning up..." -ForegroundColor Yellow
     Remove-Item -Path $TmpDir -Recurse -Force
 
@@ -78,10 +66,8 @@ try {
     Write-Host ""
 
 } catch {
-    Write-Host ""
     Write-Host "[Error] $($_.Exception.Message)" -ForegroundColor Red
     if (Test-Path $TmpDir) { Remove-Item -Path $TmpDir -Recurse -Force }
-    exit 1
 }
 
 Read-Host "Press Enter to exit"
