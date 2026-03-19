@@ -109,12 +109,71 @@
     if (changed) textNode.nodeValue = text;
   }
 
+  function applyBadTrendsToTextNode(textNode) {
+    if (!badTrendsReplacements.length) return;
+    let text = textNode.nodeValue;
+    let changed = false;
+
+    for (const { pattern, replacement, regex } of badTrendsReplacements) {
+      let re;
+      try {
+        re = regex
+          ? new RegExp(pattern, "gi")
+          : new RegExp(escapeRegex(pattern), "gi");
+      } catch (e) {
+        continue;
+      }
+      const newText = text.replace(re, replacement);
+      if (newText !== text) {
+        text = newText;
+        changed = true;
+      }
+    }
+
+    if (changed) textNode.nodeValue = text;
+  }
+
+  const WATCHED_ATTRS = ["title", "placeholder", "alt", "aria-label"];
+
+  function applyBadTrendsToAttrs(el) {
+    if (!badTrendsReplacements.length) return;
+    for (const attr of WATCHED_ATTRS) {
+      const val = el.getAttribute(attr);
+      if (!val) continue;
+      let text = val;
+      let changed = false;
+      for (const { pattern, replacement, regex } of badTrendsReplacements) {
+        let re;
+        try {
+          re = regex
+            ? new RegExp(pattern, "gi")
+            : new RegExp(escapeRegex(pattern), "gi");
+        } catch (e) {
+          continue;
+        }
+        const newText = text.replace(re, replacement);
+        if (newText !== text) { text = newText; changed = true; }
+      }
+      if (changed) el.setAttribute(attr, text);
+    }
+  }
+
   function applyBadTrendsToNode(root) {
+    // Handle the root element itself if it's an element
+    if (root.nodeType === Node.ELEMENT_NODE) {
+      applyBadTrendsToAttrs(root);
+    }
+
     const walker = document.createTreeWalker(
       root,
-      NodeFilter.SHOW_TEXT,
+      NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
       {
         acceptNode(node) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            if (SKIP_TAGS.has(node.tagName)) return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_SKIP; // visit children but process attrs
+          }
+          // TEXT_NODE
           const parent = node.parentElement;
           if (!parent) return NodeFilter.FILTER_REJECT;
           if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
@@ -122,9 +181,17 @@
         }
       }
     );
-    const nodes = [];
-    while (walker.nextNode()) nodes.push(walker.currentNode);
-    nodes.forEach(applyBadTrendsToTextNode);
+
+    const textNodes = [];
+    const elementNodes = [];
+    let current;
+    while ((current = walker.nextNode())) {
+      if (current.nodeType === Node.TEXT_NODE) textNodes.push(current);
+      else if (current.nodeType === Node.ELEMENT_NODE) elementNodes.push(current);
+    }
+
+    elementNodes.forEach(applyBadTrendsToAttrs);
+    textNodes.forEach(applyBadTrendsToTextNode);
   }
 
   function loadAndApply() {
@@ -148,19 +215,32 @@
 
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          processNode(node);
-          applyBadTrendsToNode(node);
-        } else if (node.nodeType === Node.TEXT_NODE) {
-          wrapTextNode(node);
-          applyBadTrendsToTextNode(node);
+      if (mutation.type === "attributes") {
+        const el = mutation.target;
+        if (el.nodeType === Node.ELEMENT_NODE) applyBadTrendsToAttrs(el);
+      } else if (mutation.type === "characterData") {
+        applyBadTrendsToTextNode(mutation.target);
+      } else {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            processNode(node);
+            applyBadTrendsToNode(node);
+          } else if (node.nodeType === Node.TEXT_NODE) {
+            wrapTextNode(node);
+            applyBadTrendsToTextNode(node);
+          }
         }
       }
     }
   });
 
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["title", "placeholder", "alt", "aria-label"],
+    characterData: true,
+  });
 
   loadAndApply();
 })();
