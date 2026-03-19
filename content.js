@@ -18,13 +18,16 @@
 
   const inputStyle = document.createElement("style");
   inputStyle.textContent = `
-    input, textarea {
+    input, textarea, [contenteditable] {
       font-family: "Tetrasaim", sans-serif !important;
     }
   `;
   (document.head || document.documentElement).appendChild(inputStyle);
 
+  // ── Numbers font wrapping ────────────────────────────────────────────────────
+
   const NUMBERS_RE = /[0-9\u00B2\u00B3\u00B9\u00BC-\u00BE\u2070\u2074-\u2079\u2080-\u2089\u2150-\u218B]+/g;
+  const SKIP_TAGS  = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "CANVAS", "IFRAME"]);
 
   function wrapTextNode(textNode) {
     try {
@@ -33,13 +36,11 @@
       NUMBERS_RE.lastIndex = 0;
 
       const frag = document.createDocumentFragment();
-      let lastIndex = 0;
-      let match;
+      let lastIndex = 0, match;
 
       while ((match = NUMBERS_RE.exec(text)) !== null) {
-        if (match.index > lastIndex) {
+        if (match.index > lastIndex)
           frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
-        }
         const span = document.createElement("span");
         span.className = "tetrasaim-num";
         span.textContent = match[0];
@@ -47,121 +48,107 @@
         lastIndex = NUMBERS_RE.lastIndex;
       }
 
-      if (lastIndex < text.length) {
+      if (lastIndex < text.length)
         frag.appendChild(document.createTextNode(text.slice(lastIndex)));
-      }
 
       if (textNode.parentNode) textNode.parentNode.replaceChild(frag, textNode);
     } catch (e) {}
   }
 
-  const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "SVG", "CANVAS", "IFRAME"]);
-
   function processNode(root) {
-    const walker = document.createTreeWalker(
-      root,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node) {
-          const parent = node.parentElement;
-          if (!parent) return NodeFilter.FILTER_REJECT;
-          if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
-          if (parent.classList && parent.classList.contains("tetrasaim-num")) return NodeFilter.FILTER_REJECT;
-          return NodeFilter.FILTER_ACCEPT;
-        }
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
+        if (parent.classList && parent.classList.contains("tetrasaim-num")) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
       }
-    );
-
+    });
     const nodes = [];
     while (walker.nextNode()) nodes.push(walker.currentNode);
     nodes.forEach(wrapTextNode);
   }
 
-  // --- Bad Trends Replacement ---
+  // ── Bad Trends Replacement ───────────────────────────────────────────────────
 
-  let badTrendsReplacements = [];
+  let replacements = [];
 
   function escapeRegex(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
-  function applyBadTrendsToTextNode(textNode) {
-    if (!badTrendsReplacements.length) return;
-    let text = textNode.nodeValue;
-    let changed = false;
-
-    for (const { pattern, replacement, regex } of badTrendsReplacements) {
-      let re;
+  function applyReplacements(text) {
+    if (!replacements.length) return text;
+    for (const { pattern, replacement, regex } of replacements) {
       try {
-        re = regex
+        const re = regex
           ? new RegExp(pattern, "gi")
           : new RegExp(escapeRegex(pattern), "gi");
-      } catch (e) {
-        continue;
-      }
-      const newText = text.replace(re, replacement);
-      if (newText !== text) {
-        text = newText;
-        changed = true;
-      }
+        text = text.replace(re, replacement);
+      } catch (e) {}
     }
-
-    if (changed) textNode.nodeValue = text;
+    return text;
   }
 
-  function applyBadTrendsToTextNode(textNode) {
-    if (!badTrendsReplacements.length) return;
-    let text = textNode.nodeValue;
-    let changed = false;
-
-    for (const { pattern, replacement, regex } of badTrendsReplacements) {
-      let re;
-      try {
-        re = regex
-          ? new RegExp(pattern, "gi")
-          : new RegExp(escapeRegex(pattern), "gi");
-      } catch (e) {
-        continue;
-      }
-      const newText = text.replace(re, replacement);
-      if (newText !== text) {
-        text = newText;
-        changed = true;
-      }
-    }
-
-    if (changed) textNode.nodeValue = text;
+  // 1. Regular text nodes
+  function applyToTextNode(textNode) {
+    if (!replacements.length) return;
+    const newText = applyReplacements(textNode.nodeValue);
+    if (newText !== textNode.nodeValue) textNode.nodeValue = newText;
   }
 
+  // 2. Attributes (title, placeholder, alt, aria-label)
   const WATCHED_ATTRS = ["title", "placeholder", "alt", "aria-label"];
 
-  function applyBadTrendsToAttrs(el) {
-    if (!badTrendsReplacements.length) return;
+  function applyToAttrs(el) {
+    if (!replacements.length) return;
     for (const attr of WATCHED_ATTRS) {
       const val = el.getAttribute(attr);
       if (!val) continue;
-      let text = val;
-      let changed = false;
-      for (const { pattern, replacement, regex } of badTrendsReplacements) {
-        let re;
-        try {
-          re = regex
-            ? new RegExp(pattern, "gi")
-            : new RegExp(escapeRegex(pattern), "gi");
-        } catch (e) {
-          continue;
-        }
-        const newText = text.replace(re, replacement);
-        if (newText !== text) { text = newText; changed = true; }
-      }
-      if (changed) el.setAttribute(attr, text);
+      const newVal = applyReplacements(val);
+      if (newVal !== val) el.setAttribute(attr, newVal);
     }
   }
 
-  function applyBadTrendsToNode(root) {
-    // Handle the root element itself if it's an element
+  // 3. input / textarea .value (what the user types)
+  function applyToInputValue(el) {
+    if (!replacements.length || !("value" in el)) return;
+    const newVal = applyReplacements(el.value);
+    if (newVal !== el.value) {
+      const sel = el.selectionStart;
+      el.value = newVal;
+      try { el.setSelectionRange(sel, sel); } catch (e) {}
+    }
+  }
+
+  // 4. contenteditable divs (WhatsApp Web, Gmail compose, Notion, etc.)
+  function applyToContentEditable(el) {
+    if (!replacements.length) return;
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent || SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(applyToTextNode);
+  }
+
+  // Walk entire subtree applying all replacement types
+  function applyToNode(root) {
     if (root.nodeType === Node.ELEMENT_NODE) {
-      applyBadTrendsToAttrs(root);
+      applyToAttrs(root);
+      if (root.tagName === "INPUT" || root.tagName === "TEXTAREA") {
+        applyToInputValue(root);
+        return;
+      }
+      if (root.isContentEditable) {
+        applyToContentEditable(root);
+        return;
+      }
     }
 
     const walker = document.createTreeWalker(
@@ -171,63 +158,81 @@
         acceptNode(node) {
           if (node.nodeType === Node.ELEMENT_NODE) {
             if (SKIP_TAGS.has(node.tagName)) return NodeFilter.FILTER_REJECT;
-            return NodeFilter.FILTER_SKIP; // visit children but process attrs
+            return NodeFilter.FILTER_SKIP;
           }
-          // TEXT_NODE
           const parent = node.parentElement;
-          if (!parent) return NodeFilter.FILTER_REJECT;
-          if (SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
+          if (!parent || SKIP_TAGS.has(parent.tagName)) return NodeFilter.FILTER_REJECT;
           return NodeFilter.FILTER_ACCEPT;
         }
       }
     );
 
-    const textNodes = [];
-    const elementNodes = [];
+    const textNodes = [], elementNodes = [];
     let current;
     while ((current = walker.nextNode())) {
       if (current.nodeType === Node.TEXT_NODE) textNodes.push(current);
-      else if (current.nodeType === Node.ELEMENT_NODE) elementNodes.push(current);
+      else elementNodes.push(current);
     }
-
-    elementNodes.forEach(applyBadTrendsToAttrs);
-    textNodes.forEach(applyBadTrendsToTextNode);
+    elementNodes.forEach((el) => {
+      applyToAttrs(el);
+      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") applyToInputValue(el);
+    });
+    textNodes.forEach(applyToTextNode);
   }
+
+  // ── Input event listener (fires while user types) ────────────────────────────
+
+  function debounce(fn, ms) {
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  }
+
+  const handleInput = debounce((e) => {
+    const el = e.target;
+    if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+      applyToInputValue(el);
+    } else if (el.isContentEditable) {
+      applyToContentEditable(el);
+    }
+  }, 600); // wait 600ms after user stops typing before replacing
+
+  document.addEventListener("input", handleInput, true);
+
+  // ── Fetch block.json and run ─────────────────────────────────────────────────
 
   function loadAndApply() {
     fetch(BLOCK_JSON_URL)
       .then((r) => r.json())
       .then((data) => {
-        badTrendsReplacements = (data.replacements || []).filter(
+        replacements = (data.replacements || []).filter(
           (r) => r.category === "bad_trends"
         );
-
-        applyBadTrendsToNode(document.body || document.documentElement);
+        applyToNode(document.body || document.documentElement);
       })
       .catch((e) => console.warn("[content.js] Failed to load block.json:", e));
   }
 
-  // --- Numbers font processing ---
+  // ── Numbers font — initial pass ──────────────────────────────────────────────
 
   processNode(document.body || document.documentElement);
 
-  // --- MutationObserver for dynamic content ---
+  // ── MutationObserver ─────────────────────────────────────────────────────────
 
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       if (mutation.type === "attributes") {
-        const el = mutation.target;
-        if (el.nodeType === Node.ELEMENT_NODE) applyBadTrendsToAttrs(el);
+        if (mutation.target.nodeType === Node.ELEMENT_NODE)
+          applyToAttrs(mutation.target);
       } else if (mutation.type === "characterData") {
-        applyBadTrendsToTextNode(mutation.target);
+        applyToTextNode(mutation.target);
       } else {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
             processNode(node);
-            applyBadTrendsToNode(node);
+            applyToNode(node);
           } else if (node.nodeType === Node.TEXT_NODE) {
             wrapTextNode(node);
-            applyBadTrendsToTextNode(node);
+            applyToTextNode(node);
           }
         }
       }
