@@ -21,7 +21,7 @@
   `;
   (document.head || document.documentElement).appendChild(inputStyle);
 
-  const NUMBERS_RE = /[0-9\u00B2\u00B3\u00B9\u00BC-\u00BE\u2070\u2074-\u2079\u2080-\u2089\u2150-\u218B]+/g;
+  const NUMBERS_RE = /[0-9\u00B2\u00B3\u00B9\u00BC-\u00BE\u2070\u2074-\u2079\u2080-\u2089\u2150-\u218B\u1BD3\u22B9]+/g;
 
   function wrapTextNode(textNode) {
     try {
