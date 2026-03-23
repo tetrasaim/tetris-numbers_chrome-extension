@@ -25,9 +25,13 @@
 
   function wrapTextNode(textNode) {
     try {
-      const text = textNode.nodeValue;
+      let text = textNode.nodeValue;
       if (!NUMBERS_RE.test(text)) return;
       NUMBERS_RE.lastIndex = 0;
+
+      // Replace 11 first (before 10) to avoid conflicts
+      text = text.replace(/11/g, '\u1BD3');
+      text = text.replace(/10/g, '\u22B9');
 
       const frag = document.createDocumentFragment();
       let lastIndex = 0;
